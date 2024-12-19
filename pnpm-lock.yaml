@@ -11,9 +11,15 @@ importers:
       '@octokit/rest':
         specifier: ^21.0.2
         version: 21.0.2
+      '@types/body-parser':
+        specifier: ^1.19.5
+        version: 1.19.5
       axios:
         specifier: ^1.7.9
         version: 1.7.9
+      body-parser:
+        specifier: ^1.20.3
+        version: 1.20.3
       dotenv:
         specifier: ^16.4.7
         version: 16.4.7

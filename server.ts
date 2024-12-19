@@ -3,10 +3,11 @@ import axios, { AxiosError } from "axios";
 import { Octokit } from "@octokit/rest";
 import dotenv from "dotenv";
 import winston from "winston";
+import bodyParser from "body-parser";
 
 dotenv.config();
 
-const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET } = process.env;
+const { GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, BASE_URL } = process.env;
 const port = 8080;
 
 if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
@@ -15,10 +16,7 @@ if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
   );
 }
 
-// TODO: Once the application is deployed on a real production server, this
-// needs to be changed to a valid URI for callbacks to work. Until this is
-// set to a production server, the logger will not function.
-const redirectURI = `http://localhost:${port}/callback`;
+const redirectURI = `${BASE_URL || `http://localhost:${port}`}/callback`;
 
 const logger = winston.createLogger({
   level: "info",
@@ -29,7 +27,6 @@ const logger = winston.createLogger({
       ({ timestamp, level, message }) => `${timestamp} ${level}: ${message}`,
     ),
   ),
-
   transports: [
     new winston.transports.Console(),
     new winston.transports.File({ filename: "activity_log.log" }),
@@ -38,17 +35,19 @@ const logger = winston.createLogger({
 
 const app = express();
 app.use(express.json());
+app.use(bodyParser.json());
 
-app.get("/login", (req: Request, res: Response) => {
+app.get("/login", (_, res: Response) => {
   const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${redirectURI}&scope=repo,admin:org,read:org`;
   logger.info("Redirecting to GitHub for authorization");
   res.redirect(githubAuthUrl);
 });
 
-app.get("/callback", async (req: Request, res: Response) => {
+app.get("/callback", async (req: Request, res: Response): Promise<void> => {
   const code = req.query.code as string;
   if (!code) {
-    return res.status(400).send("No code provided");
+    res.status(400).send("No code provided");
+    return;
   }
 
   try {
@@ -62,22 +61,20 @@ app.get("/callback", async (req: Request, res: Response) => {
           code,
           redirect_uri: redirectURI,
         },
-        headers: {
-          Accept: "application/json",
-        },
+        headers: { Accept: "application/json" },
         timeout: 5000, // request timeout
       },
     );
 
     const accessToken = response.data.access_token;
     if (!accessToken) {
-      return res.status(400).send("No access token received");
+      res.status(400).send("No access token received");
+      return;
     }
 
     logger.info("OAuth authorization successful");
 
     const octokit = new Octokit({ auth: accessToken });
-
     const user = await octokit.rest.users.getAuthenticated();
     logger.info(`Authenticated as ${user.data.login}`);
 
@@ -98,6 +95,52 @@ app.get("/callback", async (req: Request, res: Response) => {
   }
 });
 
+app.post("/webhook", (req: Request, res: Response): void => {
+  const event = req.headers["x-github-event"];
+  const payload = req.body;
+
+  if (!event) {
+    logger.warn("Received webhook with no event type");
+    res.status(400).send("Missing GitHub event type");
+    return;
+  }
+
+  logger.info(`Received GitHub event: ${event}`);
+  logger.info(`Event payload: ${JSON.stringify(payload, null, 2)}`);
+
+  switch (event) {
+    case "push":
+      logger.info(
+        `Push event: ${payload.ref} - ${payload.repository.full_name}`,
+      );
+      break;
+    case "issues":
+      logger.info(
+        `Issue event: ${payload.issue.title} - ${payload.repository.full_name}`,
+      );
+      break;
+    case "member":
+      logger.info(
+        `New member added: ${payload.member.login} to ${payload.organization.login}`,
+      );
+      break;
+    case "repository":
+      logger.info(
+        `Repository event: ${payload.repository.full_name} - Action: ${payload.action}`,
+      );
+      break;
+    case "organization":
+      logger.info(
+        `Organization event: ${payload.organization.login} - Action: ${payload.action}`,
+      );
+      break;
+    default:
+      logger.info(`Unhandled event type: ${event}`);
+  }
+
+  res.status(200).send("Webhook received successfully");
+});
+
 app.listen(port, () => {
-  logger.info(`Server running at http://localhost:${port}`);
+  logger.info(`Server running at ${BASE_URL || `http://localhost:${port}`}`);
 });
