@@ -1,0 +1,8 @@
+# Yuge.
+node_modules/
+
+# Ignore log files
+*.log
+
+# Secrets
+.env

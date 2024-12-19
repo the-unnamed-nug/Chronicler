@@ -1,0 +1,13 @@
+{
+	"dependencies": {
+		"@octokit/rest": "^21.0.2",
+		"axios": "^1.7.9",
+		"dotenv": "^16.4.7",
+		"express": "^4.21.2",
+		"winston": "^3.17.0"
+	},
+	"devDependencies": {
+		"@types/express": "^5.0.0",
+		"@types/node": "^22.10.2"
+	}
+}
